@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test_1/model/Currency.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert' as convert;
+import 'dart:developer' as developer;
 
 void main() {
   runApp(MyApp());
@@ -57,34 +58,40 @@ class _HomeState extends State<Home> {
     getResponse();
   }
 
+  String? lastUpdateTime;
   List<Currency> currency = [];
 
-  Future getResponse() async {
+  Future<bool> getResponse() async {
     var url =
         'https://sasansafari.com/flutter/api.php?access_key=flutter123456';
 
-    var response = await http.get(Uri.parse(url));
-    
-    if (currency.isEmpty) {
+    try {
+      var response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         List jsonList = convert.jsonDecode(response.body);
         if (jsonList.isNotEmpty) {
-          for (var i = 0; i < jsonList.length; i++) {
-            setState(() {
+          setState(() {
+            currency.clear(); // برای بروزرسانی مجدد
+            for (var item in jsonList) {
               currency.add(
                 Currency(
-                  id: jsonList[i]['id'],
-                  title: jsonList[i]['title'],
-                  price: jsonList[i]['price'],
-                  changes: jsonList[i]['changes'],
-                  status: jsonList[i]['status'],
+                  id: item['id'],
+                  title: item['title'],
+                  price: item['price'],
+                  changes: item['changes'],
+                  status: item['status'],
                 ),
               );
-            });
-          }
+            }
+          });
+          return true;
         }
       }
+    } catch (e) {
+      developer.log("خطا در دریافت دیتا: $e", name: 'getResponseError');
     }
+
+    return false;
   }
 
   @override
@@ -188,10 +195,20 @@ class _HomeState extends State<Home> {
                           ),
                         ),
                       ),
-                      onPressed: () => _showSnackBar(
-                        context,
-                        'بروزرسانی با موفقیت انجام شد',
-                      ),
+                      onPressed: () async {
+                        bool success = await getResponse();
+                        if (success) {
+                          setState(() {
+                            lastUpdateTime = _getCurrentTime();
+                          });
+                          _showSnackBar(
+                            context,
+                            'بروزرسانی با موفقیت انجام شد',
+                          );
+                        } else {
+                          _showSnackBar(context, 'خطا در بروزرسانی اطلاعات');
+                        }
+                      },
                       icon: Padding(
                         padding: const EdgeInsets.fromLTRB(0, 0, 8, 0),
                         child: Icon(
@@ -209,22 +226,22 @@ class _HomeState extends State<Home> {
                     ),
                   ),
                   Text(
-                    'آخرین بروزرسانی:    ${_getTime()}',
+                    'آخرین بروزرسانی: ${lastUpdateTime ?? '---'}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   SizedBox(width: 8),
                 ],
               ),
             ),
-            
           ],
         ),
       ),
     );
   }
 
-  String _getTime() {
-    return '20:45';
+  String _getCurrentTime() {
+    final now = DateTime.now();
+    return "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
   }
 }
 
