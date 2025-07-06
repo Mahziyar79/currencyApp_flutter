@@ -1,4 +1,4 @@
-# flutter_test_1
+# Currency App
 
 A new Flutter project.
 
