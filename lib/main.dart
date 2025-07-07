@@ -1,10 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_test_1/model/Currency.dart';
+import 'package:flutter_test_1/model/currency_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert' as convert;
-import 'dart:developer' as developer;
+import 'package:flutter_test_1/utils/get_current_time.dart';
+import 'package:flutter_test_1/utils/show_snack_bar.dart';
+import '../widgets/item_container.dart';
 
 void main() {
   runApp(MyApp());
@@ -21,9 +23,7 @@ class MyApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: [
-        Locale('fa'), // fa
-      ],
+      supportedLocales: [Locale('fa')],
 
       theme: ThemeData(
         fontFamily: 'iranSans',
@@ -52,46 +52,41 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
+  late Future responseFuture;
+  bool isLoading = false;
+  String? lastUpdateTime;
   @override
   void initState() {
     super.initState();
-    getResponse();
+    responseFuture = getResponse();
+    lastUpdateTime = getCurrentTime();
   }
 
-  String? lastUpdateTime;
   List<Currency> currency = [];
 
-  Future<bool> getResponse() async {
+  Future getResponse() async {
     var url =
         'https://sasansafari.com/flutter/api.php?access_key=flutter123456';
-
-    try {
-      var response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        List jsonList = convert.jsonDecode(response.body);
-        if (jsonList.isNotEmpty) {
-          setState(() {
-            currency.clear(); // برای بروزرسانی مجدد
-            for (var item in jsonList) {
-              currency.add(
-                Currency(
-                  id: item['id'],
-                  title: item['title'],
-                  price: item['price'],
-                  changes: item['changes'],
-                  status: item['status'],
-                ),
-              );
-            }
-          });
-          return true;
-        }
+    var response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      List jsonList = convert.jsonDecode(response.body);
+      if (jsonList.isNotEmpty) {
+        setState(() {
+          for (var item in jsonList) {
+            currency.add(
+              Currency(
+                id: item['id'],
+                title: item['title'],
+                price: item['price'],
+                changes: item['changes'],
+                status: item['status'],
+              ),
+            );
+          }
+        });
       }
-    } catch (e) {
-      developer.log("خطا در دریافت دیتا: $e", name: 'getResponseError');
+      return response;
     }
-
-    return false;
   }
 
   @override
@@ -103,7 +98,7 @@ class _HomeState extends State<Home> {
         elevation: 0,
         scrolledUnderElevation: 0,
         actions: [
-          const SizedBox(width: 26),
+          const SizedBox(width: 18),
           Image.asset("assets/images/money.png"),
           const SizedBox(width: 12),
           Text(
@@ -116,11 +111,11 @@ class _HomeState extends State<Home> {
               child: Image.asset("assets/images/menu.png"),
             ),
           ),
-          const SizedBox(width: 26),
+          const SizedBox(width: 18),
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(26),
+        padding: const EdgeInsets.all(18),
         child: Column(
           children: [
             Row(
@@ -137,7 +132,6 @@ class _HomeState extends State<Home> {
             Text(
               ' نرخ ارزها در معاملات نقدی و رایج روزانه است معاملات نقدی معاملاتی هستند که خریدار و فروشنده به محض انجام معامله، ارز و ریال را با هم تبادل می نمایند.',
               style: Theme.of(context).textTheme.bodySmall,
-              textDirection: TextDirection.rtl,
             ),
             const SizedBox(height: 24),
             Container(
@@ -160,16 +154,9 @@ class _HomeState extends State<Home> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                physics: BouncingScrollPhysics(),
-                itemCount: currency.length,
-                itemBuilder: (BuildContext context, int position) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 10, 0, 0),
-                    child: ItemContainer(currency: currency[position]),
-                  );
-                },
-              ),
+              child: isLoading
+                  ? Center(child: CircularProgressIndicator())
+                  : listFutureBuilder(context),
             ),
             const SizedBox(height: 12),
             Container(
@@ -196,18 +183,17 @@ class _HomeState extends State<Home> {
                         ),
                       ),
                       onPressed: () async {
-                        bool success = await getResponse();
-                        if (success) {
-                          setState(() {
-                            lastUpdateTime = _getCurrentTime();
-                          });
-                          _showSnackBar(
-                            context,
-                            'بروزرسانی با موفقیت انجام شد',
-                          );
-                        } else {
-                          _showSnackBar(context, 'خطا در بروزرسانی اطلاعات');
-                        }
+                        setState(() {
+                          isLoading = true;
+                        });
+                        currency.clear();
+                        await getResponse();
+                        showSnackBar(context, 'بروزرسانی با موفقیت انجام شد');
+
+                        setState(() {
+                          lastUpdateTime = getCurrentTime();
+                          isLoading = false;
+                        });
                       },
                       icon: Padding(
                         padding: const EdgeInsets.fromLTRB(0, 0, 8, 0),
@@ -233,50 +219,31 @@ class _HomeState extends State<Home> {
                 ],
               ),
             ),
+            const SizedBox(height: 28),
           ],
         ),
       ),
     );
   }
 
-  String _getCurrentTime() {
-    final now = DateTime.now();
-    return "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-  }
-}
+  FutureBuilder<dynamic> listFutureBuilder(BuildContext context) {
+    return FutureBuilder(
+      builder: (context, snapshot) {
+        return snapshot.hasData
+            ? ListView.builder(
+                physics: BouncingScrollPhysics(),
+                itemCount: currency.length,
+                itemBuilder: (BuildContext context, int position) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 10, 0, 0),
+                    child: ItemContainer(currency: currency[position]),
+                  );
+                },
+              )
+            : Center(child: CircularProgressIndicator());
+      },
 
-class ItemContainer extends StatelessWidget {
-  final Currency currency;
-  const ItemContainer({super.key, required this.currency});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 50,
-      decoration: BoxDecoration(
-        boxShadow: <BoxShadow>[BoxShadow(blurRadius: 1.0, color: Colors.grey)],
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(1000),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          Text(currency.title!, style: Theme.of(context).textTheme.bodySmall),
-          Text(currency.price!, style: Theme.of(context).textTheme.bodySmall),
-          Text(
-            currency.changes!,
-            style: currency.status == 'n'
-                ? Theme.of(context).textTheme.labelSmall
-                : Theme.of(context).textTheme.labelMedium,
-          ),
-        ],
-      ),
+      future: responseFuture,
     );
   }
-}
-
-void _showSnackBar(BuildContext context, String msg) {
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.green));
 }
